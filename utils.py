@@ -1,11 +1,12 @@
 import os, gzip, torch
 import torch.nn as nn
 import numpy as np
-import scipy.misc
+# import scipy.misc
 import imageio
 import matplotlib.pyplot as plt
 from torchvision import datasets, transforms
 
+# メモ:↓不使用の関数
 def load_mnist(dataset):
     data_dir = os.path.join("./data", dataset)
 
@@ -51,6 +52,7 @@ def load_mnist(dataset):
     y_vec = torch.from_numpy(y_vec).type(torch.FloatTensor)
     return X, y_vec
 
+# メモ:↓不使用の関数
 def load_celebA(dir, transform, batch_size, shuffle):
     # transform = transforms.Compose([
     #     transforms.CenterCrop(160),
@@ -78,7 +80,12 @@ def save_images(images, size, image_path):
 
 def imsave(images, size, path):
     image = np.squeeze(merge(images, size))
-    return scipy.misc.imsave(path, image)
+    
+    # return scipy.misc.imsave(path, image)
+    # ↓
+    image *= 256 # 0～1小数画像を0～256へスケール変更
+    image = image.astype(np.uint8) # float64→uint8へ型変換、整数化
+    return imageio.imwrite(path, image) # scipy.misc.imsaveは削除されたため 修正2405
 
 def merge(images, size):
     h, w = images.shape[1], images.shape[2]
@@ -105,7 +112,9 @@ def generate_animation(path, num):
     for e in range(num):
         img_name = path + '_epoch%03d' % (e+1) + '.png'
         images.append(imageio.imread(img_name))
-    imageio.mimsave(path + '_generate_animation.gif', images, fps=5)
+    # imageio.mimsave(path + '_generate_animation.gif', images, fps=5)
+    # ↓
+    imageio.mimsave(path + '_generate_animation.gif', images, duration=200, loop=0) # 引数名が変更になったため [fps]→[ms]単位へ変更 反復するにはloop=0を追加指定が必要になる 修正2405
 
 def loss_plot(hist, path = 'Train_hist.png', model_name = ''):
     x = range(len(hist['D_loss']))

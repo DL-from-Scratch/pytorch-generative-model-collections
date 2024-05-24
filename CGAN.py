@@ -131,6 +131,12 @@ class CGAN(object):
             self.sample_z_, self.sample_y_ = self.sample_z_.cuda(), self.sample_y_.cuda()
 
     def train(self):
+        
+      # debug: ただGIF画像のみを生成したい場合 既に連番画像が生成済み必須 num=～に連番最後の番号を指定 追加2405
+        # utils.generate_animation(self.result_dir + '/' + self.dataset + '/' + self.model_name + '/' + self.model_name, num=5)
+        # exit(0)
+      # debug: end
+        
         self.train_hist = {}
         self.train_hist['D_loss'] = []
         self.train_hist['G_loss'] = []
@@ -148,6 +154,8 @@ class CGAN(object):
             self.G.train()
             epoch_start_time = time.time()
             for iter, (x_, y_) in enumerate(self.data_loader):
+                
+                # 注意: ↓最後の端数となるバッチは使用していない。batch_size固定処理のみとするため。GPUの転送処理が面倒? 追記2405
                 if iter == self.data_loader.dataset.__len__() // self.batch_size:
                     break
 
@@ -187,6 +195,13 @@ class CGAN(object):
                 if ((iter + 1) % 100) == 0:
                     print("Epoch: [%2d] [%4d/%4d] D_loss: %.8f, G_loss: %.8f" %
                           ((epoch + 1), (iter + 1), self.data_loader.dataset.__len__() // self.batch_size, D_loss.item(), G_loss.item()))
+                
+              # debug: ここで、更に細かく、途中の生成画像を見ると、経過がよく分かる。追加2405
+                # if ((iter + 1) % 10) == 0:
+                    # with torch.no_grad():
+                        # self.visualize_results((epoch+1) * 10000 + iter+1)
+              # debug: end
+                
 
             self.train_hist['per_epoch_time'].append(time.time() - epoch_start_time)
             with torch.no_grad():

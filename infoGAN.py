@@ -125,6 +125,7 @@ class infoGAN(object):
         print('-----------------------------------------------')
 
         # fixed noise & condition
+        # ↓10x10の画像を生成するために、10x10個分のzベクトルを生成・ランダム値を代入
         self.sample_z_ = torch.zeros((self.sample_num, self.z_dim))
         for i in range(self.len_discrete_code):
             self.sample_z_[i * self.len_discrete_code] = torch.rand(1, self.z_dim)
@@ -134,19 +135,27 @@ class infoGAN(object):
         temp = torch.zeros((self.len_discrete_code, 1))
         for i in range(self.len_discrete_code):
             temp[i, 0] = i
-
+        # ↑tempは、[0,1,2,...,9]
+        
         temp_y = torch.zeros((self.sample_num, 1))
         for i in range(self.len_discrete_code):
             temp_y[i * self.len_discrete_code: (i + 1) * self.len_discrete_code] = temp
+        # ↑temp_yは、[0,1,2,...,9, 0,1,2,...,9, ... 0,1,2,...,9]
 
+        # ↓テスト用の固定yベクトルは、[eye(10), eye(10), ... eye(10)]^T
         self.sample_y_ = torch.zeros((self.sample_num, self.len_discrete_code)).scatter_(1, temp_y.type(torch.LongTensor), 1)
+        # scatter_(dim, index, src) の操作では、dim は次元（この場合1、すなわち列方向）、index はインデックス（この場合temp_y）、src は代入する値（この場合は1）
+        
+        # ↓テスト用の固定cベクトルは、全ゼロのベクトルを使用している
         self.sample_c_ = torch.zeros((self.sample_num, self.len_continuous_code))
 
         # manipulating two continuous code
         self.sample_z2_ = torch.rand((1, self.z_dim)).expand(self.sample_num, self.z_dim)
+        # ↓連続変化可視化用の固定yベクトルは、0番目のみ1のベクトルを使用
         self.sample_y2_ = torch.zeros(self.sample_num, self.len_discrete_code)
         self.sample_y2_[:, 0] = 1
 
+        # ↓連続変化可視化用の固定cベクトルは、linspaceで-1～1を10分割した連続変化の値を使用
         temp_c = torch.linspace(-1, 1, 10)
         self.sample_c2_ = torch.zeros((self.sample_num, 2))
         for i in range(self.len_discrete_code):
@@ -158,6 +167,19 @@ class infoGAN(object):
             self.sample_z_, self.sample_y_, self.sample_c_, self.sample_z2_, self.sample_y2_, self.sample_c2_ = \
                 self.sample_z_.cuda(), self.sample_y_.cuda(), self.sample_c_.cuda(), self.sample_z2_.cuda(), \
                 self.sample_y2_.cuda(), self.sample_c2_.cuda()
+        
+      # debug: テスト用の各固定ベクトルを出力
+        import pathlib
+        path_out = self.result_dir + '/' + self.dataset + '/' + self.model_name + '/'
+        torch.set_printoptions(profile="full") # PyTorchのテンソルを省略せずにテキストで完全に表示
+        pathlib.Path(path_out + "debug sample_z_.txt").write_text(str(self.sample_z_))
+        pathlib.Path(path_out + "debug sample_y_.txt").write_text(str(self.sample_y_))
+        pathlib.Path(path_out + "debug sample_c_.txt").write_text(str(self.sample_c_))
+        pathlib.Path(path_out + "debug sample_z2_.txt").write_text(str(self.sample_z2_))
+        pathlib.Path(path_out + "debug sample_y2_.txt").write_text(str(self.sample_y2_))
+        pathlib.Path(path_out + "debug sample_c2_.txt").write_text(str(self.sample_c2_))
+        torch.set_printoptions(profile="default")
+      # debug: end
 
     def train(self):
         self.train_hist = {}
@@ -167,7 +189,10 @@ class infoGAN(object):
         self.train_hist['per_epoch_time'] = []
         self.train_hist['total_time'] = []
 
-        self.y_real_, self.y_fake_ = torch.ones(self.batch_size, 1), torch.zeros(self.batch_size, 1)
+        # self.y_real_, self.y_fake_ = torch.ones(self.batch_size, 1), torch.zeros(self.batch_size, 1)
+        # ↓
+        self.y_real_, self.y_fake_ = torch.ones(self.batch_size), torch.zeros(self.batch_size) # エラーが発生したため、サイズが一致するように修正2405 [tag=ERR1]
+        
         if self.gpu_mode:
             self.y_real_, self.y_fake_ = self.y_real_.cuda(), self.y_fake_.cuda()
 
@@ -184,10 +209,13 @@ class infoGAN(object):
                 if self.SUPERVISED == True:
                     y_disc_ = torch.zeros((self.batch_size, self.len_discrete_code)).scatter_(1, y_.type(torch.LongTensor).unsqueeze(1), 1)
                 else:
+                    # メモ: 既定で、SUPERVISED=Falseが実行される
+                    # ラベル情報なしで自然に分類される！ランダムなラベル値の列を与えるのみ(下記)
                     y_disc_ = torch.from_numpy(
                         np.random.multinomial(1, self.len_discrete_code * [float(1.0 / self.len_discrete_code)],
                                               size=[self.batch_size])).type(torch.FloatTensor)
 
+                # メモ: 教師なしで自然に調整可能な特徴が得られる！ランダムな連続値の列を与えるのみ(下記)
                 y_cont_ = torch.from_numpy(np.random.uniform(-1, 1, size=(self.batch_size, 2))).type(torch.FloatTensor)
 
                 if self.gpu_mode:
@@ -197,7 +225,7 @@ class infoGAN(object):
                 self.D_optimizer.zero_grad()
 
                 D_real, _, _ = self.D(x_)
-                D_real_loss = self.BCE_loss(D_real, self.y_real_)
+                D_real_loss = self.BCE_loss(D_real, self.y_real_) # エラー発生→修正2405 [tag=ERR1]
 
                 G_ = self.G(z_, y_cont_, y_disc_)
                 D_fake, _, _ = self.D(G_)
@@ -218,16 +246,28 @@ class infoGAN(object):
                 G_loss = self.BCE_loss(D_fake, self.y_real_)
                 self.train_hist['G_loss'].append(G_loss.item())
 
-                G_loss.backward(retain_graph=True)
+                # G_loss.backward(retain_graph=True)
+                # ↓
+                G_loss.backward() # 下記で再計算するので不要 修正2405 [tag=ERR2]
+                
                 self.G_optimizer.step()
 
                 # information loss
+
+                # 下記: 上記の「D_optimizer.step()」「G_optimizer.step()」で更新されるので、
+                # G・D両モデル内のパラメータ値が変わり、値・勾配の再利用は不可となり、
+                # 下記の再計算が必要 追加2405 [tag=ERR2]
+                G_ = self.G(z_, y_cont_, y_disc_)
+                D_fake, D_cont, D_disc = self.D(G_)
+
                 disc_loss = self.CE_loss(D_disc, torch.max(y_disc_, 1)[1])
                 cont_loss = self.MSE_loss(D_cont, y_cont_)
                 info_loss = disc_loss + cont_loss
                 self.train_hist['info_loss'].append(info_loss.item())
 
-                info_loss.backward()
+                info_loss.backward() # エラー発生→修正2405 [tag=ERR2]
+                # エラー内容: RuntimeError: one of the variables needed for gradient computation has been modified by an inplace operation
+                # コード内で+=, *=, .add_(), .mul_()などのin-place操作を見つけて、それらを非in-place版（例：.add(), .mul()）に置き換えます。これにより、元のデータが保持され、勾配計算時に必要な情報が失われません。
                 self.info_optimizer.step()
 
 
@@ -260,6 +300,7 @@ class infoGAN(object):
         image_frame_dim = int(np.floor(np.sqrt(self.sample_num)))
 
         """ style by class """
+        # ↓毎回固定のz,c,yベクトルを与えて、テスト用の画像を生成する
         samples = self.G(self.sample_z_, self.sample_c_, self.sample_y_)
         if self.gpu_mode:
             samples = samples.cpu().data.numpy().transpose(0, 2, 3, 1)
